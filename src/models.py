@@ -1,6 +1,5 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 from pydantic import BaseModel, Field, IPvAnyAddress
 
 
@@ -19,3 +18,15 @@ class SSHAuthEvent(BaseModel):
     source_ip: IPvAnyAddress
     port: int
     raw_log: str = Field(..., description="Original raw syslog line for auditability")
+
+
+class AggregatedAlert(BaseModel):
+    source_ip: str
+    total_failures: int
+    targeted_usernames: list[str]
+    first_seen: datetime
+    last_seen: datetime
+    duration_seconds: float
+    is_brute_force: bool
+    summary: str
+    
