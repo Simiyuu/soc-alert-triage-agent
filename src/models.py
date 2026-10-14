@@ -29,4 +29,18 @@ class AggregatedAlert(BaseModel):
     duration_seconds: float
     is_brute_force: bool
     summary: str
-    
+
+class IPReputation(BaseModel):
+    ip: str
+    is_private: bool
+    reputation_score: int = Field(
+        ..., description="Risk score from 0 (clean) to 100 (confirmed malicious)"
+    )
+    country: str
+    asn_org: str
+    threat_tags: list[str]
+
+
+class EnrichedAlert(BaseModel):
+    alert: AggregatedAlert
+    reputation: IPReputation
