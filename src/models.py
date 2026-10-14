@@ -44,3 +44,18 @@ class IPReputation(BaseModel):
 class EnrichedAlert(BaseModel):
     alert: AggregatedAlert
     reputation: IPReputation
+
+class SeverityLevel(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class TriageReport(BaseModel):
+    alert_source_ip: str
+    severity: SeverityLevel
+    mitre_technique: str = Field(..., description="e.g. T1110 - Brute Force")
+    threat_assessment: str
+    recommended_containment: list[str]
+    escalation_required: bool
