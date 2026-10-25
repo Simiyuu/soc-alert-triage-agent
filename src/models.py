@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, IPvAnyAddress
 
 
@@ -19,3 +19,19 @@ class SSHAuthEvent(BaseModel):
     source_ip: IPvAnyAddress
     port: int = Field(ge=1, le=65535)
     raw_log: str
+
+
+class WindowsAuthEvent(BaseModel):
+    timestamp: datetime
+    hostname: str
+    process_id: int
+    event_id: int
+    event_type: EventType
+    username: str
+    source_ip: IPvAnyAddress
+    port: int = Field(ge=1, le=65535)
+    logon_type: int
+    workstation_name: Optional[str] = None
+    status: Optional[str] = None
+    sub_status: Optional[str] = None
+    raw_event: Optional[Dict[str, Any]] = None
