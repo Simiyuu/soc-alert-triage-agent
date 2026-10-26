@@ -1,13 +1,16 @@
 from typing import Any, Generator, Iterable, Optional
 from src.models import EventType, SSHAuthEvent, UnifiedAuthRecord, WindowsAuthEvent
 from src.parser import parse_line
+from src.sanitizer import sanitize_auth_record
 from src.windows_parser import parse_windows_event
 
 
 def normalize_event(event: Any) -> Optional[UnifiedAuthRecord]:
-    """Normalizes typed auth events (SSHAuthEvent, WindowsAuthEvent) or raw payloads into UnifiedAuthRecord."""
+    """Normalizes typed auth events or raw payloads into a sanitized UnifiedAuthRecord."""
+    record: Optional[UnifiedAuthRecord] = None
+
     if isinstance(event, SSHAuthEvent):
-        return UnifiedAuthRecord(
+        record = UnifiedAuthRecord(
             timestamp=event.timestamp,
             hostname=event.hostname,
             service="sshd",
@@ -19,8 +22,8 @@ def normalize_event(event: Any) -> Optional[UnifiedAuthRecord]:
             metadata={"process_id": event.process_id},
         )
 
-    if isinstance(event, WindowsAuthEvent):
-        return UnifiedAuthRecord(
+    elif isinstance(event, WindowsAuthEvent):
+        record = UnifiedAuthRecord(
             timestamp=event.timestamp,
             hostname=event.hostname,
             service="windows_security",
@@ -38,21 +41,24 @@ def normalize_event(event: Any) -> Optional[UnifiedAuthRecord]:
             },
         )
 
-    if isinstance(event, str):
+    elif isinstance(event, str):
         parsed_ssh = parse_line(event)
         if parsed_ssh:
             return normalize_event(parsed_ssh)
 
-    if isinstance(event, dict):
+    elif isinstance(event, dict):
         parsed_win = parse_windows_event(event)
         if parsed_win:
             return normalize_event(parsed_win)
+
+    if record is not None:
+        return sanitize_auth_record(record)
 
     return None
 
 
 def stream_unified_events(records: Iterable[Any]) -> Generator[UnifiedAuthRecord, None, None]:
-    """Lazy streaming generator that normalizes heterogeneous telemetry on the fly."""
+    """Lazy streaming generator that normalizes and sanitizes heterogeneous telemetry on the fly."""
     for record in records:
         normalized = normalize_event(record)
         if normalized is not None:
