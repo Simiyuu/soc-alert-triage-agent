@@ -1,5 +1,12 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+from src.geo_velocity import (
+    GeoLocation,
+    MockGeoIPDatabase,
+    calculate_haversine_distance,
+    calculate_travel_velocity,
+    is_impossible_travel,
+)
 from src.models import EventType, SecurityAlert, UnifiedAuthRecord
 from src.state_engine import SlidingWindowStateTracker
 
@@ -15,12 +22,11 @@ class VerticalBruteForceRule:
         if event.event_type not in (EventType.FAILED_LOGIN, EventType.INVALID_USER):
             return None
 
-        # Keyed on both source IP and target username
         key = f"{event.source_ip}:{event.username}"
         self.tracker.add_event(key=key, event=event)
 
         active_events = self.tracker.get_events(key=key, current_time=event.timestamp)
-        if len(active_events) == self.threshold:
+        if len(active_events) >= self.threshold:
             sorted_events = sorted(active_events, key=lambda e: e.timestamp)
             return SecurityAlert(
                 rule_id="SOC-RULE-001",
@@ -48,7 +54,6 @@ class HorizontalPasswordSprayRule:
         if event.event_type not in (EventType.FAILED_LOGIN, EventType.INVALID_USER):
             return None
 
-        # Keyed strictly by source IP
         key = str(event.source_ip)
         self.tracker.add_event(key=key, event=event)
 
@@ -56,7 +61,7 @@ class HorizontalPasswordSprayRule:
             key=key, field_name="username", current_time=event.timestamp
         )
 
-        if len(distinct_users) == self.threshold:
+        if len(distinct_users) >= self.threshold:
             active_events = self.tracker.get_events(key=key, current_time=event.timestamp)
             sorted_events = sorted(active_events, key=lambda e: e.timestamp)
             return SecurityAlert(
@@ -72,14 +77,6 @@ class HorizontalPasswordSprayRule:
                 metadata={"service": event.service, "hostname": event.hostname},
             )
         return None
-    
-from src.geo_velocity import (
-    GeoLocation,
-    MockGeoIPDatabase,
-    calculate_haversine_distance,
-    calculate_travel_velocity,
-    is_impossible_travel,
-)
 
 
 class ImpossibleTravelRule:
@@ -103,7 +100,6 @@ class ImpossibleTravelRule:
         username = event.username
         prev_entry = self._user_locations.get(username)
 
-        # Update position for future evaluations
         self._user_locations[username] = (current_geo, event.timestamp)
 
         if prev_entry is None:
@@ -143,7 +139,8 @@ class ImpossibleTravelRule:
             )
 
         return None
-    
+
+
 class DistributedBruteForceRule:
     """Detects multi-source credential stuffing targeting a single account
 
@@ -158,7 +155,6 @@ class DistributedBruteForceRule:
         if event.event_type not in (EventType.FAILED_LOGIN, EventType.INVALID_USER):
             return None
 
-        # Keyed strictly by target username
         key = event.username
         self.tracker.add_event(key=key, event=event)
 
@@ -169,7 +165,7 @@ class DistributedBruteForceRule:
             )
         }
 
-        if len(distinct_ips) == self.threshold:
+        if len(distinct_ips) >= self.threshold:
             active_events = self.tracker.get_events(key=key, current_time=event.timestamp)
             sorted_events = sorted(active_events, key=lambda e: e.timestamp)
             return SecurityAlert(
@@ -191,3 +187,4 @@ class DistributedBruteForceRule:
             )
 
         return None
+    
