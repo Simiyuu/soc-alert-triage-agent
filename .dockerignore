@@ -1,0 +1,29 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# VCS & IDEs
+.git
+.gitignore
+.github
+.vscode/
+.idea/
+
+# Local data & outputs
+*.log
+alerts.jsonl
+data/
+*.pcap
