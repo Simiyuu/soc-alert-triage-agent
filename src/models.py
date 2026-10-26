@@ -35,3 +35,15 @@ class WindowsAuthEvent(BaseModel):
     status: Optional[str] = None
     sub_status: Optional[str] = None
     raw_event: Optional[Dict[str, Any]] = None
+
+class UnifiedAuthRecord(BaseModel):
+    timestamp: datetime
+    hostname: str
+    service: str  # e.g. "sshd", "windows_security"
+    event_type: EventType
+    username: str
+    source_ip: IPvAnyAddress
+    port: int = Field(ge=1, le=65535)
+    logon_type: Optional[int] = None
+    raw_reference: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
