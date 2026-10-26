@@ -73,3 +73,73 @@ class HorizontalPasswordSprayRule:
             )
         return None
     
+from src.geo_velocity import (
+    GeoLocation,
+    MockGeoIPDatabase,
+    calculate_haversine_distance,
+    calculate_travel_velocity,
+    is_impossible_travel,
+)
+
+
+class ImpossibleTravelRule:
+    """Correlates consecutive successful logins per user across physical geography
+
+    to detect impossible travel velocities (MITRE T1078).
+    """
+
+    def __init__(self, speed_threshold_kmh: float = 800.0):
+        self.threshold_kmh = speed_threshold_kmh
+        self._user_locations: dict[str, tuple[GeoLocation, datetime]] = {}
+
+    def evaluate(self, event: UnifiedAuthRecord) -> Optional[SecurityAlert]:
+        if event.event_type != EventType.ACCEPTED_LOGIN:
+            return None
+
+        current_geo = MockGeoIPDatabase.lookup(str(event.source_ip))
+        if current_geo.latitude is None or current_geo.longitude is None:
+            return None
+
+        username = event.username
+        prev_entry = self._user_locations.get(username)
+
+        # Update position for future evaluations
+        self._user_locations[username] = (current_geo, event.timestamp)
+
+        if prev_entry is None:
+            return None
+
+        prev_geo, prev_time = prev_entry
+        velocity = calculate_travel_velocity(
+            prev_geo, prev_time, current_geo, event.timestamp
+        )
+
+        if is_impossible_travel(velocity, threshold_kmh=self.threshold_kmh):
+            distance = calculate_haversine_distance(
+                prev_geo.latitude,
+                prev_geo.longitude,
+                current_geo.latitude,
+                current_geo.longitude,
+            )
+            return SecurityAlert(
+                rule_id="SOC-RULE-003",
+                rule_name="Impossible Travel",
+                mitre_technique="T1078",
+                severity="CRITICAL",
+                source_ip=str(event.source_ip),
+                target_users=[username],
+                event_count=2,
+                first_seen=prev_time,
+                last_seen=event.timestamp,
+                metadata={
+                    "origin_ip": prev_geo.ip,
+                    "origin_city": prev_geo.city,
+                    "origin_country": prev_geo.country,
+                    "target_city": current_geo.city,
+                    "target_country": current_geo.country,
+                    "distance_km": round(distance, 2),
+                    "velocity_kmh": round(velocity, 2) if velocity != float("inf") else "inf",
+                },
+            )
+
+        return None
