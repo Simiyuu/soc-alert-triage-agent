@@ -143,3 +143,51 @@ class ImpossibleTravelRule:
             )
 
         return None
+    
+class DistributedBruteForceRule:
+    """Detects multi-source credential stuffing targeting a single account
+
+    from multiple distinct IP addresses within a sliding window (MITRE T1110.004).
+    """
+
+    def __init__(self, distinct_ip_threshold: int = 5, window_seconds: int = 120):
+        self.threshold = distinct_ip_threshold
+        self.tracker = SlidingWindowStateTracker(window_seconds=window_seconds)
+
+    def evaluate(self, event: UnifiedAuthRecord) -> Optional[SecurityAlert]:
+        if event.event_type not in (EventType.FAILED_LOGIN, EventType.INVALID_USER):
+            return None
+
+        # Keyed strictly by target username
+        key = event.username
+        self.tracker.add_event(key=key, event=event)
+
+        distinct_ips = {
+            str(ip)
+            for ip in self.tracker.get_distinct_field_values(
+                key=key, field_name="source_ip", current_time=event.timestamp
+            )
+        }
+
+        if len(distinct_ips) == self.threshold:
+            active_events = self.tracker.get_events(key=key, current_time=event.timestamp)
+            sorted_events = sorted(active_events, key=lambda e: e.timestamp)
+            return SecurityAlert(
+                rule_id="SOC-RULE-004",
+                rule_name="Distributed Multi-Source Brute Force",
+                mitre_technique="T1110.004",
+                severity="HIGH",
+                source_ip="DISTRIBUTED",
+                target_users=[event.username],
+                event_count=len(active_events),
+                first_seen=sorted_events[0].timestamp,
+                last_seen=sorted_events[-1].timestamp,
+                metadata={
+                    "service": event.service,
+                    "hostname": event.hostname,
+                    "source_ips": sorted(list(distinct_ips)),
+                    "distinct_ip_count": len(distinct_ips),
+                },
+            )
+
+        return None
