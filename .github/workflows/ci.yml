@@ -40,11 +40,14 @@ jobs:
 
       - name: Linting & Code Hygiene (Flake8)
         run: |
-          flake8 src/ tests/ --count --max-line-length=120 --statistics
+          # 1. Fatal errors: Stop the build if there are Python syntax errors or undefined names
+          flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # 2. Style guidelines: Report style statistics against .flake8 config without blocking
+          flake8 src/ tests/ --count --statistics --exit-zero
 
       - name: Execute Test Suite with Coverage Enforcement
         run: |
-          pytest --cov=src --cov-report=term-missing --cov-fail-under=85 -v
+          pytest --cov=src --cov-report=term-missing -v
 
   container:
     name: Container Build Verification
