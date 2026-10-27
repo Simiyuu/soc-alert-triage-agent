@@ -46,8 +46,10 @@ jobs:
           flake8 src/ tests/ --count --statistics --exit-zero
 
       - name: Execute Test Suite with Coverage Enforcement
+        env:
+          PYTHONPATH: .
         run: |
-          pytest --cov=src --cov-report=term-missing -v
+          pytest -m pytest --cov=src --cov-report=term-missing -v
 
   container:
     name: Container Build Verification
@@ -67,4 +69,3 @@ jobs:
           context: .
           push: false
           tags: soc-threat-pipeline:latest
-          
