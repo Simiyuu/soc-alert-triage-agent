@@ -92,4 +92,155 @@ class PipelineOrchestrator:
             dispatched = self.process_event(record)
             all_dispatched.extend(dispatched)
         return all_dispatched
-    
+
+# =====================================================================
+# v2.0 Autonomous SOC Triage Pipeline Orchestrator
+# =====================================================================
+
+from typing import List, Optional, Union
+from src.asset_registry import AssetIdentityRegistry
+from src.containment import ContainmentEngine, ContainmentPlan
+from src.dossier import IncidentDossier, IncidentDossierGenerator
+from src.models import (
+    SSHAuthEvent,
+    SecurityAlert,
+    TriageAssessment,
+    TriageVerdict,
+    UnifiedAuthRecord,
+    WindowsAuthEvent,
+)
+from src.risk_engine import RiskEngine
+from src.rules_password_spray import PasswordSprayRule
+from src.rules_privileged_abuse import PrivilegedAccountAbuseRule
+from src.triage_engine import TriageEngine
+
+
+class TriagePipeline:
+    """End-to-end autonomous triage pipeline coordinating detection, scoring, containment, and reporting."""
+
+    def __init__(
+        self,
+        registry: Optional[AssetIdentityRegistry] = None,
+        risk_engine: Optional[RiskEngine] = None,
+        triage_engine: Optional[TriageEngine] = None,
+        containment_engine: Optional[ContainmentEngine] = None,
+        dossier_generator: Optional[IncidentDossierGenerator] = None,
+        spray_rule: Optional[PasswordSprayRule] = None,
+        abuse_rule: Optional[PrivilegedAccountAbuseRule] = None,
+    ) -> None:
+        self.registry = registry or AssetIdentityRegistry()
+        self.risk_engine = risk_engine or RiskEngine(registry=self.registry)
+        self.triage_engine = triage_engine or TriageEngine(
+            risk_engine=self.risk_engine, registry=self.registry
+        )
+        self.containment_engine = containment_engine or ContainmentEngine()
+        self.dossier_generator = dossier_generator or IncidentDossierGenerator()
+
+        # Detection rules
+        self.spray_rule = spray_rule or PasswordSprayRule()
+        self.abuse_rule = abuse_rule or PrivilegedAccountAbuseRule(registry=self.registry)
+
+        # Internal state
+        self._dossiers: List[IncidentDossier] = []
+
+    def _normalize_event(
+        self, event: Union[UnifiedAuthRecord, SSHAuthEvent, WindowsAuthEvent]
+    ) -> UnifiedAuthRecord:
+        """Converts heterogeneous auth events into standardized UnifiedAuthRecord instances."""
+        if isinstance(event, UnifiedAuthRecord):
+            return event
+        if isinstance(event, SSHAuthEvent):
+            return UnifiedAuthRecord(
+                timestamp=event.timestamp,
+                hostname=event.hostname,
+                service="sshd",
+                event_type=event.event_type,
+                username=event.username,
+                source_ip=event.source_ip,
+                port=event.port,
+                raw_reference=event.raw_log,
+            )
+        if isinstance(event, WindowsAuthEvent):
+            return UnifiedAuthRecord(
+                timestamp=event.timestamp,
+                hostname=event.hostname,
+                service="windows_security",
+                event_type=event.event_type,
+                username=event.username,
+                source_ip=event.source_ip,
+                port=event.port,
+                logon_type=event.logon_type,
+                raw_reference=str(event.raw_event) if event.raw_event else None,
+            )
+        raise TypeError(f"Unsupported event type: {type(event)}")
+
+    def process_event(
+        self,
+        event: Union[UnifiedAuthRecord, SSHAuthEvent, WindowsAuthEvent],
+        is_known_malicious: bool = False,
+    ) -> List[IncidentDossier]:
+        """Ingests a single event, correlates against detection rules, and returns resulting dossiers."""
+        record = self._normalize_event(event)
+        emitted_alerts: List[SecurityAlert] = []
+
+        # 1. Evaluate detection rules
+        spray_alert = self.spray_rule.evaluate(record)
+        if spray_alert:
+            emitted_alerts.append(spray_alert)
+
+        abuse_alert = self.abuse_rule.evaluate(record)
+        if abuse_alert:
+            emitted_alerts.append(abuse_alert)
+
+        # 2. Triage, contain, and compile dossiers for each triggered alert
+        new_dossiers: List[IncidentDossier] = []
+        for alert in emitted_alerts:
+            assessment = self.triage_engine.triage(
+                alert, is_known_malicious=is_known_malicious
+            )
+            containment_plan: Optional[ContainmentPlan] = None
+            if assessment.requires_containment:
+                containment_plan = self.containment_engine.generate_plan(
+                    assessment, alert=alert
+                )
+
+            dossier = self.dossier_generator.generate(
+                assessment=assessment,
+                alert=alert,
+                containment_plan=containment_plan,
+            )
+            self._dossiers.append(dossier)
+            new_dossiers.append(dossier)
+
+        return new_dossiers
+
+    def process_batch(
+        self,
+        events: List[Union[UnifiedAuthRecord, SSHAuthEvent, WindowsAuthEvent]],
+        is_known_malicious: bool = False,
+    ) -> List[IncidentDossier]:
+        """Ingests an event stream and returns all generated dossiers sorted descending by risk score."""
+        batch_dossiers: List[IncidentDossier] = []
+        for ev in events:
+            dossiers = self.process_event(ev, is_known_malicious=is_known_malicious)
+            batch_dossiers.extend(dossiers)
+
+        batch_dossiers.sort(key=lambda d: d.assessment.risk_score, reverse=True)
+        return batch_dossiers
+
+    def get_dossiers(self) -> List[IncidentDossier]:
+        """Returns all historical dossiers generated during the pipeline's lifecycle."""
+        return list(self._dossiers)
+
+    def get_critical_incidents(self) -> List[IncidentDossier]:
+        """Returns only dossiers flagged for CRITICAL_CONTAINMENT."""
+        return [
+            d for d in self._dossiers
+            if d.assessment.verdict == TriageVerdict.CRITICAL_CONTAINMENT
+        ]
+
+    def clear(self) -> None:
+        """Resets internal state, cleared dossiers, and resets rule sliding windows."""
+        self._dossiers.clear()
+        self.spray_rule.reset()
+        
