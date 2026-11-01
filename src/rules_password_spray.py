@@ -81,11 +81,13 @@ class PasswordSprayRule:
             first_seen=datetime.fromtimestamp(first_seen_epoch, tz=timezone.utc),
             last_seen=datetime.fromtimestamp(last_seen_epoch, tz=timezone.utc),
             metadata={
+                "target_hostname": event.hostname,
                 "distinct_targets_count": len(unique_targets),
                 "window_seconds": self.window_seconds,
                 "attack_vector": "horizontal_credential_spray",
             },
         )
+    
 
     def process_batch(self, events: List[UnifiedAuthRecord]) -> List[SecurityAlert]:
         """Processes a sequence of records chronologically and returns triggered alerts."""

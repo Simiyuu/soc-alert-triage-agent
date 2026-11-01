@@ -198,11 +198,9 @@ class TriagePipeline:
             assessment = self.triage_engine.triage(
                 alert, is_known_malicious=is_known_malicious
             )
-            containment_plan: Optional[ContainmentPlan] = None
-            if assessment.requires_containment:
-                containment_plan = self.containment_engine.generate_plan(
-                    assessment, alert=alert
-                )
+            containment_plan: Optional[ContainmentPlan] = (
+                self.containment_engine.generate_plan(assessment, alert=alert)
+            )
 
             dossier = self.dossier_generator.generate(
                 assessment=assessment,
@@ -213,6 +211,7 @@ class TriagePipeline:
             new_dossiers.append(dossier)
 
         return new_dossiers
+    
 
     def process_batch(
         self,
@@ -243,4 +242,3 @@ class TriagePipeline:
         """Resets internal state, cleared dossiers, and resets rule sliding windows."""
         self._dossiers.clear()
         self.spray_rule.reset()
-        
