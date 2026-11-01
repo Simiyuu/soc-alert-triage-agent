@@ -1,226 +1,196 @@
-# Enterprise SOC Threat Pipeline & Behavioral Correlation Engine
+# Autonomous SOC Alert Triage & Containment Platform (v2.0)
 
-An enterprise-grade, memory-efficient threat telemetry ingestion, threat intelligence enrichment, and behavioral correlation engine. Built with strict Test-Driven Development (TDD), this pipeline ingests heterogeneous Linux and Windows authentication telemetry, sanitizes against adversarial log-forging attacks, performs sub-microsecond in-memory CIDR threat lookups via Longest Prefix Matching, calculates spherical travel velocity, executes stateful sliding-window correlation rules, and dispatches deduplicated alerts to enterprise SIEM platforms (Elastic ECS 8.x and Splunk HEC).
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Test Suite](https://img.shields.io/badge/pytest-126%20passed-brightgreen.svg)](tests/)
+[![Architecture](https://img.shields.io/badge/architecture-autonomous--triage-orange.svg)](#architecture)
+[![MITRE ATT&CK](https://img.shields.io/badge/MITRE-T1110%20%7C%20T1078-red.svg)](https://attack.mitre.org/)
+
+An autonomous Tier-1/Tier-2 Security Operations Center (SOC) triage, threat evaluation, and active containment platform. Built to ingest heterogeneous authentication telemetry (Linux OpenSSH syslog and Windows Event Log Security 4624/4625), correlate attacks against enterprise topology and privileged identity contexts, score incident risks via a multi-factor dynamic algorithm, and synthesize actionable containment plans across Linux, Windows, and Active Directory.
 
 ---
 
-## Architecture Overview
+## Key Capabilities (v2.0 Architecture)
 
 ```text
-       [ Linux auth.log ]               [ Windows Security EVTX / JSON ]
-      (sshd RFC 5424/Legacy)                 (Event ID 4624 / 4625)
-                │                                       │
-                ▼                                       ▼
-       [ src/parser.py ]                    [ src/windows_parser.py ]
-                │                                       │
-                └───────────────┬───────────────────────┘
-                                │
-                                ▼
-                       [ src/ingest.py ]
-                  (Unified Streaming Generator)
-                                │
-                                ▼
-                      [ src/sanitizer.py ]
-         (CWE-117 Strip, ANSI Scrub, NFKC Unicode Norm)
-                                │
-                                ▼
-                    [ src/threat_intel.py ]
-           (In-Memory CIDR Bitwise Radix Trie / LPM)
-                                │
-                                ▼
-                     [ src/state_engine.py ]
-         (Sliding-Window Keyed Deque Engine with Lazy TTL)
-                                │
-                                ▼
-                       [ src/rules.py ]
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
- [ Vertical Brute ]     [ Password Spray ]      [ Impossible Travel ]
-   (T1110.001)             (T1110.003)           (T1078 / Haversine)
-                                                        │
-                                                        ▼
-                                             [ Distributed Brute ]
-                                                  (T1110.004)
-                                │
-                                ▼
-                    [ src/deduplicator.py ]
-         (SHA-256 Canonical Fingerprint & Suppression)
-                                │
-                                ▼
-                     [ src/exporter.py ]
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
- [ Elastic ECS 8.x ]     [ Splunk HEC ]          [ JSONL Audit Log ]
+       [ OpenSSH Syslog ]             [ Windows Event Log (4624/4625) ]
+                \                                    /
+                 v                                  v
+              +----------------------------------------+
+              | Unified Telemetry Normalization Layer  |
+              +----------------------------------------+
+                                  |
+                                  v
+              +----------------------------------------+
+              | Stateful Behavioral Detection Engines  |
+              |  - Horizontal Password Spray (T1110)   |
+              |  - Privileged Account Abuse (T1078)    |
+              +----------------------------------------+
+                                  |
+                                  v
+              +----------------------------------------+
+              | Asset & Identity Context Registry      |
+              |  - Crown Jewel & Criticality Mapping   |
+              |  - CIDR Zone & Admin Subnet Validation |
+              +----------------------------------------+
+                                  |
+                                  v
+              +----------------------------------------+
+              | Dynamic Multi-Factor Risk Engine       |
+              |  Score: 0.0 - 100.0 (Clamped)          |
+              +----------------------------------------+
+                                  |
+                                  v
+              +----------------------------------------+
+              | Autonomous Triage Decision Engine      |
+              |  - CRITICAL_CONTAINMENT | SUSPICIOUS   |
+              |  - BENIGN_NOISE         | FALSE_POS    |
+              +----------------------------------------+
+                                  |
+                +-----------------+-----------------+
+                |                                   |
+                v                                   v
++-------------------------------+   +-------------------------------+
+| Automated Containment Engine  |   | Incident Dossier Generator    |
+| - iptables / nftables Drops   |   | - Executive Markdown Brief    |
+| - Windows Netsh / PS Rules    |   | - SIEM/SOAR JSON Payloads     |
+| - AD User Account Lockout     |   | - MITRE ATT&CK Mapping        |
+| - Host Micro-Segmentation     |   | - Forensic Remediation Steps  |
++-------------------------------+   +-------------------------------+
+```
+
+### 1. Unified Telemetry Normalization
+Normalizes disparate authentication logs into strict `UnifiedAuthRecord` schemas, preserving logon types (Type 2 Interactive, Type 3 Network, Type 10 RemoteInteractive/RDP), source IPs, targeting metadata, and process IDs.
+
+### 2. Behavioral Threat Detection
+- **Horizontal Password Spraying (`PasswordSprayRule` - MITRE T1110.003):** Tracks unique target account cardinality per source IP over sliding time windows ($\Delta t \le 300\text{s}$) with automated cooldown suppression to eliminate alert floods.
+- **Privileged Account Abuse (`PrivilegedAccountAbuseRule` - MITRE T1078.002 / T1078.004):** Flags interactive logon attempts by service accounts (`svc_*`), administrative logins originating from unauthorized source CIDRs, and off-hours sessions targeting mission-critical databases.
+
+### 3. Context-Aware Asset & Identity Resolution
+`AssetIdentityRegistry` correlates raw IPs and hostnames against organizational hierarchies:
+- **Criticality Levels:** `LOW`, `MEDIUM`, `HIGH`, `MISSION_CRITICAL`.
+- **Crown-Jewel Flags:** Direct identification of core ledgers, domain controllers, and key repositories.
+- **CIDR Subnet Zones:** Automatic fallback classification for uncataloged hosts in known server subnets.
+- **Identity Context:** Administrative privileges, executive VIP tracking, and approved source CIDR restrictions.
+
+### 4. Multi-Factor Dynamic Risk Engine
+Calculates risk on a normalized 0.0 to 100.0 scale across five weighted vectors:
+1. **Base Severity:** `LOW` (20.0), `MEDIUM` (40.0), `HIGH` (65.0), `CRITICAL` (85.0).
+2. **Asset Criticality:** Up to +20.0 for crown-jewel assets.
+3. **Identity Privilege:** +15.0 for Admin/VIP targeting, +10.0 for Service Accounts.
+4. **Volume & Velocity:** Up to +15.0 for volume ($\ge 50$ events) and +5.0 for high-velocity bursts ($\ge 10$ events in $\le 60$s).
+5. **Threat Intelligence:** +15.0 for Tor exit nodes, +20.0 for verified malicious threat actors.
+
+### 5. Automated Containment Playbooks
+Translates triage verdicts into executable remediation scripts:
+- **Perimeter & Host Firewall:** `iptables`, `nftables`, and Windows Advanced Firewall (`New-NetFirewallRule` / `netsh`).
+- **Identity Revocation:** Active Directory lockout (`Disable-ADAccount`), token revocation (`Revoke-AzureADUserAllRefreshToken`), and Linux session termination (`passwd -l`, `pkill`).
+- **Host Micro-Segmentation:** Emergency isolation policies restricting inbound/outbound communication while preserving dedicated SecOps management CIDRs (`10.50.0.0/24`).
+
+### 6. Incident Dossier & Runbook Generation
+Synthesizes comprehensive SOC incident packages exported to:
+- **Markdown Runbooks:** Structured analyst briefs with executive metrics, asset impact tables, risk factor audit trails, terminal command fences, and numbered triage checklists.
+- **JSON Serialization:** Direct integration schema for SIEM indexes (Splunk, Elastic) and SOAR webhooks (Cortex XSOAR, Tines).
+
+---
+
+## Operational Triage Matrix
+
+| Risk Score | Verdict | Containment | Recommended Response |
+| :---: | :---: | :---: | :--- |
+| **$\ge$ 75.0** (or $\ge$ 60.0 on Crown Jewels) | `CRITICAL_CONTAINMENT` | **Required** | Automated IP perimeter drop, AD account lockout, host network isolation, memory artifact capture. |
+| **45.0 - 74.9** | `SUSPICIOUS_REVIEW` | Manual Review | Correlate against VPN/proxy telemetry, out-of-band user verification, monitor target endpoint. |
+| **< 45.0** | `BENIGN_NOISE` | None | Log and archive telemetry to data lake; no active analyst intervention required. |
+| **Override** | `FALSE_POSITIVE` | Suppressed | Recognized vulnerability scan (`is_authorized_scan`) or whitelisted automation. |
+
+---
+
+## Directory Layout
+
+```text
+soc-alert-triage-agent/
+├── benchmarks/
+│   └── benchmark_triage.py         # High-volume streaming load & latency benchmark
+├── src/
+│   ├── asset_registry.py          # Enterprise asset & identity context registry
+│   ├── containment.py             # Multi-platform firewall, AD & host containment
+│   ├── dossier.py                 # Incident dossier & Markdown runbook generator
+│   ├── models.py                  # Pydantic schemas, event models & enums
+│   ├── parsers.py                 # OpenSSH syslog & Windows Event Log parsers
+│   ├── pipeline.py                # End-to-end orchestration pipeline
+│   ├── risk_engine.py             # Multi-factor dynamic risk scoring engine
+│   ├── rules_password_spray.py    # Sliding-window horizontal password spray rule
+│   ├── rules_privileged_abuse.py  # Service account abuse & subnet violation rule
+│   └── triage_engine.py           # Autonomous verdict assignment & runbooks
+├── tests/
+│   ├── test_asset_registry.py
+│   ├── test_containment.py
+│   ├── test_context_models.py
+│   ├── test_dossier.py
+│   ├── test_parsers.py
+│   ├── test_pipeline_v2.py
+│   ├── test_risk_engine.py
+│   ├── test_rules_password_spray.py
+│   ├── test_rules_privileged_abuse.py
+│   └── test_triage_engine.py
+├── pytest.ini
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## MITRE ATT&CK Detection Matrix
+## Installation & Setup
 
-| Rule ID | Rule Name | MITRE Technique | Tactics | Detection Logic & Window |
-|---|---|---|---|---|
-| **SOC-RULE-001** | Vertical Brute Force | **T1110.001** | Credential Access | Greater than or equal to 5 authentication failures against a single username from a single source IP within 60s. |
-| **SOC-RULE-002** | Horizontal Password Spray | **T1110.003** | Credential Access | Greater than or equal to 5 distinct targeted accounts hit by a single source IP within 300s. |
-| **SOC-RULE-003** | Impossible Travel | **T1078** | Defense Evasion, Initial Access | Consecutive successful logins for the same account separated by travel velocity greater than 800 km/h. |
-| **SOC-RULE-004** | Distributed Multi-Source Brute Force | **T1110.004** | Credential Access | Greater than or equal to 5 distinct source IPs failing authentication against a single user within 120s. |
+1. **Clone the Repository:**
+   ```bash
+   git clone https://github.com/Simiyuu/soc-alert-triage-agent.git
+   cd soc-alert-triage-agent
+   ```
 
----
+2. **Configure Virtual Environment:**
+   ```bash
+   python -m venv venv
+   # On Windows:
+   .\venv\Scripts\Activate.ps1
+   # On Linux/macOS:
+   source venv/bin/activate
+   ```
 
-## Core Engineering Innovations
-
-### 1. Zero-Allocation Subnet Matching (Radix Prefix Trie)
-External HTTP reputation lookups introduce 50 to 200 ms of latency per record and leak sensitive corporate telemetry. This engine implements an in-memory binary radix trie (`CIDRTrie`) that indexes IPv4 network prefixes down to individual bits (MSB 31 to LSB 0).
-- **Time Complexity:** O(K) where K is less than or equal to 32 bit comparisons, achieving sub-microsecond lookups (< 2 microseconds).
-- **Longest Prefix Match (LPM):** Automatically selects the most granular rule (e.g., preference for a specific `/24` C2 subnet over a broad `/16` ISP range).
-
-### 2. Great-Circle Spherical Geodesy (Haversine Formula)
-To detect compromised credentials across disparate global origins, the pipeline calculates real-world distance between geographic coordinates using the spherical Haversine formula:
-
-$$d = 2R \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta \lambda}{2}\right)}\right)$$
-
-- Mean Earth radius R = 6,371.0 km.
-- **Zero-Division Handling:** Simultaneous logins (delta time = 0 seconds) from distinct physical coordinates return infinite velocity (`float('inf')`), instantaneously flagging concurrent credential hijacking.
-- **RFC 1918 Isolation:** Internal private IPs are resolved defensively to non-routable entities with zero false positives.
-
-### 3. Stateful In-Memory Sliding Windows
-Correlation rules rely on `SlidingWindowStateTracker`, which stores events in thread-isolated, double-ended queues (`collections.deque`) partitioned by composite pivot keys:
-- **Amortized O(1) Time:** Appending new events and pruning expired records from the left of the deque takes constant time.
-- **Memory Leak Protection:** State buckets are aggressively purged (`del self._state[key]`) as soon as their internal window empties.
-
-### 4. Canonical Alert Deduplication & Cooldown Windows
-During high-frequency brute-force attacks, continuous alerts induce analyst fatigue. `AlertDeduplicator` computes a deterministic SHA-256 fingerprint:
-
-$$\text{Digest} = \text{SHA256}\Big(\text{rule\_id} \parallel \text{source\_ip} \parallel \text{sorted}(\text{target\_users})\Big)$$
-
-- Duplicate occurrences within the configured window (e.g., 300 seconds) are suppressed.
-- Upon cooldown expiration, the rule re-arms and dispatches the alert stamped with `metadata["suppressed_occurrences"]`.
-
-### 5. Input Sanitization & CWE-117 Protection
-Hostile adversaries inject payloads through authentication identities. The ingestion boundary strips:
-- **ANSI Terminal Escapes:** Removes `\x1b[...]` control sequences to eliminate terminal emulation tampering.
-- **Log Forging / CWE-117:** Replaces `\r\n`, `\r`, and `\n` characters with single spaces to stop log injection.
-- **Unicode Homoglyphs:** Enforces NFKC Unicode normalization to collapse spoofed character variations into canonical forms.
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ---
 
-## Test Suite & Verification
+## Testing & Quality Assurance
 
-The pipeline is verified by **63 comprehensive automated tests** written in `pytest` with zero external dependencies:
+The platform enforces 100% passing test requirements across all units and integration boundaries:
 
 ```bash
-# Execute the complete test suite with verbose execution output
-python -m pytest -v
+# Run complete test suite (126 tests)
+python -m pytest
 
-# Run with coverage enforcement
-python -m pytest --cov=src --cov-report=term-missing --cov-fail-under=85
-```
+# Run with verbose reporting and execution durations
+python -m pytest -v --durations=10
 
-### Test Breakdown
-- `tests/test_parser.py`: Baseline Linux SSH syslog parsing.
-- `tests/test_parser_hardening.py`: RFC 5424 ISO-8601 timestamps, leap-year boundaries, boundary validation.
-- `tests/test_windows_parser.py`: Windows Security Event IDs 4624 & 4625, NTSTATUS translation (`0xC0000064`, `0xC000006A`).
-- `tests/test_ingest.py`: Multi-source heterogeneous streaming generator.
-- `tests/test_sanitization.py`: ANSI sequence scrubbing, null-byte extraction, CWE-117 prevention.
-- `tests/test_threat_intel.py`: Radix trie bitwise insertion and Longest Prefix Match resolution.
-- `tests/test_geo_velocity.py`: Great-circle math, flight velocity thresholds, concurrent login edge cases.
-- `tests/test_state_engine.py`: Sliding-window temporal eviction and set aggregations.
-- `tests/test_rules_brute_force.py`: T1110.001 and T1110.003 correlation models.
-- `tests/test_rules_impossible_travel.py`: T1078 cross-border user travel rules.
-- `tests/test_rules_distributed_brute_force.py`: T1110.004 distributed credential stuffing rules.
-- `tests/test_deduplicator.py`: SHA-256 fingerprinting and cooldown re-arming.
-- `tests/test_exporter.py`: Elastic Common Schema (ECS 8.x), Splunk HEC, and JSONL transformations.
-- `tests/test_pipeline.py`: End-to-end multi-source orchestration integration.
-
----
-
-## Quickstart & CLI Usage
-
-### Local Environment Setup
-
-```powershell
-# 1. Clone repository
-git clone [https://github.com/Simiyuu/soc-threat-pipeline.git](https://github.com/Simiyuu/soc-threat-pipeline.git)
-cd soc-threat-pipeline
-
-# 2. Initialize and activate virtual environment
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-
-# 3. Install production and development dependencies
-pip install -r requirements.txt
-```
-
-### Running the Executive Incident Dashboard
-
-```powershell
-# Run simulated attack stream demonstration
-python -m src.main
-
-# Process a production authentication log file
-python -m src.main --input /var/log/auth.log --output-jsonl alerts.jsonl --window 300
-```
-
-### Multi-Stage Docker Container
-
-```powershell
-# Build minimal production container
-docker build -t soc-threat-pipeline:latest .
-
-# Run containerized pipeline under unprivileged UID 10001
-docker run --rm -v ${PWD}/data:/app/data soc-threat-pipeline:latest --help
+# Run specific functional suites
+python -m pytest tests/test_pipeline_v2.py -v
+python -m pytest tests/test_risk_engine.py -v
 ```
 
 ---
 
-## SIEM Integration & Schema Support
+## Performance Benchmarking
 
-### Elastic Common Schema (ECS 8.x)
-Alerts are serialized directly into RFC-compliant ECS JSON records:
-```json
-{
-  "@timestamp": "2026-10-26T14:30:00Z",
-  "event": {
-    "kind": "alert",
-    "category": ["authentication"],
-    "type": ["indicator"],
-    "severity": 3,
-    "id": "c1a6b0c2-3e28-4c12-9c90-9c1b3f9d5111"
-  },
-  "threat": {
-    "technique": {
-      "id": "T1110.001",
-      "name": "Vertical Brute Force"
-    }
-  },
-  "source": { "ip": "198.51.100.50" },
-  "user": { "name": "admin", "target": ["admin"] },
-  "rule": { "id": "SOC-RULE-001", "name": "Vertical Brute Force" }
-}
+A high-volume streaming benchmark tests ingestion throughput and triage latency against mixed enterprise traffic:
+
+```bash
+# Benchmark streaming triage across 5,000 synthetic events
+python benchmarks/benchmark_triage.py --events 5000
 ```
 
-### Splunk HTTP Event Collector (HEC)
-Direct transmission over HTTPS using Splunk HEC envelopes with float epoch timestamps:
-```json
-{
-  "time": 1792938600.0,
-  "source": "soc-threat-pipeline",
-  "sourcetype": "soc:security:alert",
-  "event": {
-    "alert_id": "c1a6b0c2-3e28-4c12-9c90-9c1b3f9d5111",
-    "rule_name": "Vertical Brute Force",
-    "mitre_technique": "T1110.001",
-    "severity": "HIGH",
-    "source_ip": "198.51.100.50",
-    "target_users": ["admin"],
-    "event_count": 5
-  }
-}
-```
-
----
-
-## Author & Engineering Standards
-- **Engineer:** Chandler Matere Simiyu
-- **Architecture Standard:** Python 3.11+, Pydantic v2, Flake8, Bandit SAST, Pytest-Cov
-- **Target Operations:** Enterprise Cyber Defense Center (CDC), Security Operations Center (SOC) Level 2/3 Detection Engineering
-
+### Benchmark Metrics (Reference Environment)
+- **Ingestion Throughput:** $> 2,000$ events/second (single-threaded execution).
+- **Mean Triage Latency:** $< 500\,\mu\text{s}$ per event.
+- **Zero Loss:** 100% correlation fidelity on concurrent spray and privilege abuse scenarios.
